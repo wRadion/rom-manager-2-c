@@ -1,11 +1,7 @@
-import re
 from bitstring import *
-import math
-import time
 import struct
 import BinPNG
 import os
-import multiprocessing as mp
 import Log
 from functools import lru_cache
 #typedef struct {
@@ -119,7 +115,7 @@ def OptimizeModeldata(ModelData):
 					if cmd not in VertDict[lastLoad]:
 						VertDict[lastLoad].append(cmd)
 					else:
-						print(cmd)
+						Log.Debug(cmd)
 			#Now VertDict is optimized to only have the triangles that matter.
 			#Now remake material with first grabbing all material data, then when encountering first tri draw fill in via dictionary instead
 			x=0
@@ -202,8 +198,8 @@ def ModelWrite(rom, ModelData, nameG, id, tdir, opt, level):
         'IA':BinPNG.IA,
         'I':BinPNG.I
 	}
-    
-	#array of pngs for multiprocessing later. Func,args
+
+	#array of pngs. Func,args
 	Pngs = []
 	name = nameG/'custom.model.inc.c'
 	if os.path.isfile(tdir/'textureNew.inc.c'):
@@ -374,9 +370,7 @@ def ModelWrite(rom, ModelData, nameG, id, tdir, opt, level):
 				f.write("\t" + c + ',\n')
 			f.write('};\n\n')
 	f.close()
-	p = mp.Pool(mp.cpu_count()-1)
-	crcs = p.map(WriteTex,Pngs)
-	p.close()
+	crcs = map(WriteTex, Pngs)
 	return [refs,crcs]
 
 def WriteTex(Pngs):
@@ -441,13 +435,13 @@ def DecodeVDL(rom, start, s, id, opt):
 	gCycle = 1
 	global gFog
 	gFog = 0
-    
+
 	return DecodeDL(rom, s, id, dl, verts, textureptrs, amb, diffuse, ranges, x, [start], LastMat, 0, opt)
 
 #recursively get DLs
 def DecodeDL(rom, s, id, dl, verts, textureptrs, amb, diffuse, ranges, x, start, LastMat, dlStack, opt):
 	global gFog
-    
+
 	while(True):
 		cmd = rom[start[dlStack][0] + x:start[dlStack][0]+x+8]
 		cmd = Bin2C(cmd, id)
@@ -691,7 +685,7 @@ def G_MOVEMEM_Decode(bin,id):
 def G_LOAD_UCODE_Decode(bin,id):
 	#idk yet
 	return (data,size,text)
-	
+
 def G_DL_Decode(bin,id):
 	store,pad,seg=bin.unpack('uint:8,int:16,uint:32')
 	return ('DL_'+id+hex(seg),)
@@ -715,10 +709,10 @@ def G_SETOTHERMODE_L_Decode(bin,id):
 		if shift==3:
 			#broken fog in editor
 			if value==0xC8112078:
-				# print(id+" has fog in it. Visit the model.inc.c file and make sure the setcombine is properly set")
+				Log.Warn(id+" has fog in it. Visit the model.inc.c file and make sure the setcombine is properly set")
 				return (enum,'G_RM_FOG_SHADE_A', 'G_RM_AA_ZB_OPA_SURF2')
 			if value==0xC8113078:
-				# print(id+" has fog in it. Visit the model.inc.c file and make sure the setcombine is properly set")
+				Log.Warn(id+" has fog in it. Visit the model.inc.c file and make sure the setcombine is properly set")
 				return (enum,'G_RM_FOG_SHADE_A', 'G_RM_AA_ZB_TEX_EDGE2')
 			return (enum,0,value)
 		else:
@@ -826,7 +820,7 @@ def G_SETKEYR_Decode(bin,id):
 def G_SETCONVERT_Decode(bin,id):
 	p,k0,k1,k2,k3,k4,k5=bin.unpack('int:2,6*int:9')
 	return (k0,k1,k2,k3,k4,k5)
-	
+
 def G_SETSCISSOR_Decode(bin,id):
 	Xstart,Ystart,pad,mode,Xend,Yend=bin.unpack('2*uint:12,2*uint:4,2*uint:12')
 	try:
@@ -849,11 +843,11 @@ def G_RDPSETOTHERMODE_Decode(bin,id):
 def G_LOADTLUT_Decode(bin,id):
 	pad,tile,color,pad1=bin.unpack('int:28,uint:4,2*uint:12')
 	return (tile,(((color>>2)&0x3ff)+1))
-	
+
 def G_RDPHALF_2_Decode(bin,id):
 	pad,bits=bin.unpack('int:24,uint:32')
 	return (bits,)
-	
+
 def G_SETTILESIZE_Decode(bin,id):
 	Sstart,Tstart,pad,tile,width,height=bin.unpack('2*uint:12,2*uint:4,2*uint:12')
 	return (tile,Sstart,Tstart,width,height)
@@ -934,7 +928,7 @@ def G_SETCOMBINE_Decode(bin,id):
 	#b color = basic+combined+6 as key center+7 as key4
 	#c color = basic+combined+C
 	#d color = basic+combined+one
-	
+
 	#a alpha = basicA+one+combined
 	#b alpha = a alpha
 	#c alpha = basic+one+0 asLoD fraction

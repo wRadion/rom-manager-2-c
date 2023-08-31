@@ -1,4 +1,5 @@
 import struct
+from RM2C import BankPointerException
 
 def B2I(bytes):
     return int(bytes.hex(),16)
@@ -73,17 +74,17 @@ def TcH(bytes):
 
 def GetWaterData(rom, script, arg, area):
     #for editor water tables are at 0x19001800, but that might not be gauranteed
-    type = arg&0xFF #0 for water, 1 for toxic mist, 2 for mist, all start with 0x50 for msb
+    waterType = arg&0xFF #0 for water, 1 for toxic mist, 2 for mist, all start with 0x50 for msb
     if script.editor:
         try:
-            WT = script.B2P(0x19001800+0x50*type)
-        except:
+            WT = script.B2P(0x19001800+0x50*waterType)
+        except: # BankPointerException:
             return
     else:
     #for RM they are at 0x19006000
         try:
-            WT = script.B2P(0x19006000+0x280*type+0x50*area)
-        except:
+            WT = script.B2P(0x19006000+0x280*waterType+0x50*area)
+        except: # BankPointerException:
             return
     UPW = (lambda x,y: struct.unpack(">L",x[y:y+4])[0])
     UPH = (lambda x,y: struct.unpack(">h",x[y:y+2])[0])
@@ -93,13 +94,13 @@ def GetWaterData(rom, script, arg, area):
     x=0
     while(True):
         dat = UPW(rom,WT+4+x)
-        try:
-            if dat==0:
-                break
-            loc = script.B2P(dat)
-            ptrs.append(loc)
-        except:
+        if dat==0:
             break
+        try:
+            loc = script.B2P(dat)
+        except: # BankPointerException:
+            break
+        ptrs.append(loc)
         x+=8
     #Now ptrs should be an array of my water data
     WB = []
@@ -165,53 +166,53 @@ def GeoParse(rom, start, script, segstart, id, cskybox, CBG, area):
 
 def GeoWrite(geo, name, id):
     tabs = 1 # The amount of tabs we currently add to the ineer section of the GeoLayout definition.
-    
+
     data = ""
-    
+
     # Open the Geo file for writing.
     f = open(name, 'w')
-    
+
     # Iterate the geo we got passed and write it out.
     for u,g in enumerate(geo):
         data += '#include "custom.model.inc.h"\n\nconst GeoLayout Geo_%s[]= {\n' % (id + hex(g[1]))
-        
+
         for command in g[0]:
             # If we're closing the node, Then we subtract before writing.
             if 'GEO_CLOSE_NODE' in command:
                 tabs -= 1
-                
+
             data += '\t' * tabs + command + ',\n'
-            
+
             # If we're opening a node, We add a tab after writing.
             if 'GEO_OPEN_NODE' in command:
                 tabs += 1
- 
+
         # Write ending bracket.
         data += "};\n\n"
         # Reset our tab count.
         tabs = 1
-        
+
     # Strip all trailing whitespace and newlines in our data.
     data = data.rstrip()
-    
+
     # Write our data to the file.
     f.write(data)
-        
+
     # We are done writing, Close the file.
     f.close()
 
 def GeoActWrite(geo, f):
     tabs = 1 # The amount of tabs we currently add to the ineer section of the GeoLayout definition.
-    
+
     data = ""
-    
+
     # actor geo layouts reuse DLs under different IDs
     geoSymbs = []
     geoRep = []
     for u,g in enumerate(geo):
         # Write GeoLayout definition header.
         data += '#include "custom.model.inc.h"\n\nconst GeoLayout %s[]= {\n' % g[1]
-        
+
         for command in g[0]:
             # Extra parsing for Actors.
             addr = command.split('(')[-1].split('_')
@@ -222,25 +223,25 @@ def GeoActWrite(geo, f):
                 else:
                     geoSymbs.append(addr)
                     geoRep.append(command)
-            
+
             # If we're closing the node, Then we subtract before writing.
             if 'GEO_CLOSE_NODE' in command:
                 tabs -= 1
-                
+
             data += '\t' * tabs + command + ',\n'
-            
+
             # If we're opening a node, We add a tab after writing.
             if 'GEO_OPEN_NODE' in command:
                 tabs += 1
-            
+
         # Write ending bracket.
         data += "};\n\n"
         # Reset our tab count.
         tabs = 1
-        
+
     # Strip all trailing whitespace and newlines in our data.
     data = data.rstrip()
-    
+
     # Write our data to the file.
     f.write(data)
 

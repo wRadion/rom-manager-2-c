@@ -1,3 +1,5 @@
+import Log
+
 #Dictionaries with key=	(modelID,geo addr) value=	(MODEL_NAME 	(None if none),geo_name,actor folder name)
 
 def GMI(a):
@@ -15,10 +17,10 @@ def MV(a):
 	return (a.split(',')[0],a.split(',')[1],'_'.join(a.split(',')[1].split('_')[:-1]))
 
 def MD(group,s,name):
-	print('{} = {{'.format(name))
+	Log.Debug('{} = {{'.format(name))
 	for a in group:
-		print('\t{}:{},'.format(MK(a,s),MV(a)))
-	print('}')
+		Log.Debug('\t{}:{},'.format(MK(a,s),MV(a)))
+	Log.Debug('}')
 
 #Level groups. Very likely to be used by level script to find what model an address is.
 #These are a mess as romhacks do all sorts of dumb shit.

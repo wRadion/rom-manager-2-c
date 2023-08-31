@@ -12,9 +12,7 @@ from bitstring import *
 from RM2CData import *
 import BinPNG
 import groups as GD
-import math
 import disassemble_sound as d_s
-import multiprocessing as mp
 import Log
 import re
 import BhvParse as BP
@@ -23,12 +21,14 @@ import gc
 import ActorCHKSM
 import BehComp
 import ColComp
-import time
-import cProfile
-import pstats
 #So that each Script class doesn't open up a half MB file.
-mapF = open('sm64.us.map','r')
-map = mapF.readlines()
+from Utils import get_path, get_resource
+
+map = open(get_resource('sm64.us.map'),'r').readlines()
+
+class BankPointerException(Exception):
+    def __init__(self, message):
+        super().__init__(message)
 
 class Script():
     def __init__(self,level):
@@ -52,7 +52,7 @@ class Script():
         self.header=[]
         self.objects = []
         self.ScrollArray=[]
-        
+
     def B2P(self,B):
         Bank=B>>24
         offset=B&0xFFFFFF
@@ -67,29 +67,31 @@ class Script():
                 return offset
         seg = self.banks[Bank]
         if not seg:
-            print(hex(B),hex(Bank),self.banks[Bank-2:Bank+3])
-            raise Exception('')
+            msg1 = 'Bank pointer not found: ' + hex(Bank) + ', offset: ' + hex(offset) + ' (original B argument: ' + hex(B) + ')'
+            msg2 = 'Available banks: ' + ', '.join(hex(i) for i in range(len(self.banks)) if self.banks[i] != None)
+            msg3 = 'This part of the ROM is probably malformed at binary level or does not instruct the proper Bank boundaries beforehand!'
+            raise BankPointerException(message = "\n".join([msg1, msg2, msg3]))
         return seg[0]+offset
-        
+
     def L4B(self,T):
         x=0
         for i,b in enumerate(T):
             x+=b<<(8*(3-i))
         return x
-        
+
     def GetArea(self):
         try:
             return self.levels[self.Currlevel][self.CurrArea]
         except:
             return None
-            
+
     def GetNumAreas(self,level):
         count=[]
         for i,area in enumerate(self.levels[level]):
             if area:
                 count.append(i)
         return count
-        
+
     def GetLabel(self,addr):
         #behavior is in bank 0 and won't be in map ever
         # if addr[0:2]=='00':
@@ -99,16 +101,16 @@ class Script():
             if addr in l:
                 q = l.rfind(" ")
                 return l[q:-1]
-                
+
         return "0x"+addr
-        
+
     def GetAddr(self,label):
         for l in self.map:
             if label in l:
                 return "0x"+l.split("0x")[1][8:16]
-                
+
         return None
-        
+
     def RME(self,num,rom):
         if self.editor:
             return
@@ -116,10 +118,10 @@ class Script():
         start=TcH(rom[start+num*16:start+num*16+4])
         end=TcH(rom[start+4+num*16:start+num*16+8])
         self.banks[0x0e]=[start,end]
-        
+
     def MakeDec(self,name):
         self.header.append(name)
-        
+
     def Seg2(self,rom):
         UPH = (lambda x,y: struct.unpack(">H",x[y:y+2])[0])
         start=UPH(rom,0x3ac2)<<16
@@ -158,7 +160,13 @@ def LoadRawJumpPush(rom,cmd,start,script):
     script.Stack.append(script.Base)
     script.Top+=1
     script.Base=script.Top
-    return script.B2P(TcH(jump))
+    try:
+        return script.B2P(TcH(jump))
+    except BankPointerException as e:
+        Log.Debug(e)
+        Log.Debug("Stacktrace:")
+        traceback.print_stack()
+        raise e
 
 def LoadRawJump(rom,cmd,start,script):
     arg=cmd[2]
@@ -168,7 +176,13 @@ def LoadRawJump(rom,cmd,start,script):
     jump = arg[10:14]
     script.banks[TcH(bank)]=[TcH(begin),TcH(end)]
     script.Top=script.Base
-    return script.B2P(TcH(jump))
+    try:
+        return script.B2P(TcH(jump))
+    except BankPointerException as e:
+        Log.Debug(e)
+        Log.Debug("Stacktrace:")
+        traceback.print_stack()
+        raise e
 
 def Exit(rom,cmd,start,script):
     script.Top=script.Base
@@ -179,23 +193,35 @@ def Exit(rom,cmd,start,script):
     script.Stack.pop()
     script.Top-=1
     return start
-    
+
 def JumpRaw(rom,cmd,start,script):
     arg=cmd[2]
-    return script.B2P(TcH(arg[2:6]))
-    
+    try:
+        return script.B2P(TcH(arg[2:6]))
+    except BankPointerException as e:
+        Log.Debug(e)
+        Log.Debug("Stacktrace:")
+        traceback.print_stack()
+        raise e
+
 def JumpPush(rom,cmd,start,script):
     script.Top+=1
     script.Stack.append(start)
     arg=cmd[2]
-    return script.B2P(TcH(arg[2:6]))
-    
+    try:
+        return script.B2P(TcH(arg[2:6]))
+    except BankPointerException as e:
+        Log.Debug(e)
+        Log.Debug("Stacktrace:")
+        traceback.print_stack()
+        raise e
+
 def Pop(rom,cmd,start,script):
     start=script.Stack[script.Top]
     script.Top-=1
     script.Stack.pop()
     return start
-    
+
 def CondPop(rom,cmd,start,script):
     #this is where the script loops
     #Ill assume no custom shit is done
@@ -207,7 +233,13 @@ def CondJump(rom,cmd,start,script):
     level=arg[2:6]
     jump=arg[6:10]
     if script.Currlevel==TcH(level):
-        return script.B2P(TcH(jump))
+        try:
+            return script.B2P(TcH(jump))
+        except BankPointerException as e:
+            Log.Debug(e)
+            Log.Debug("Stacktrace:")
+            traceback.print_stack()
+            raise e
     else:
         return start
 
@@ -217,7 +249,7 @@ def SetLevel(rom,cmd,start,script):
     # if not script.levels.get("Currlevel"):
         # script.levels[script.Currlevel]=[None for a in range(8)]
     return start
-    
+
 def LoadAsm(rom,cmd,start,script):
     arg=cmd[2]
     ram=arg[2:6]
@@ -238,7 +270,7 @@ def LoadData(rom,cmd,start,script):
 
 def LoadMio0(rom,cmd,start,script):
     pass
-    
+
 def LoadMio0Tex(rom,cmd,start,script):
     return LoadData(rom,cmd,start,script)
 
@@ -250,30 +282,48 @@ def StartArea(rom,cmd,start,script):
     area=arg[0]+script.Aoffset
     script.CurrArea=area
     q=Area()
-    q.geo=script.B2P(TcH(arg[2:6]))
+    try:
+        q.geo=script.B2P(TcH(arg[2:6]))
+    except BankPointerException as e:
+        Log.Debug(e)
+        Log.Debug("Stacktrace:")
+        traceback.print_stack()
+        raise e
     q.objects=[]
     q.warps=[]
     q.rom=rom
     script.levels[script.Currlevel][script.CurrArea]=q
     return start
-    
+
 def EndArea(rom,cmd,start,script):
     script.CurrArea=None
     return start
-    
+
 def LoadPolyF3d(rom,cmd,start,script):
     arg=cmd[2]
     id=arg[1:2]
     layer=TcH(arg[0:1])>>4
     f3d=TcH(arg[2:6])
-    script.models[TcH(id)]=(f3d,'f3d',layer,script.B2P(f3d),script)
+    try:
+        script.models[TcH(id)]=(f3d,'f3d',layer,script.B2P(f3d),script)
+    except BankPointerException as e:
+        Log.Debug(e)
+        Log.Debug("Stacktrace:")
+        traceback.print_stack()
+        raise e
     return start
-    
+
 def LoadPolyGeo(rom,cmd,start,script):
     arg=cmd[2]
     id=arg[1:2]
     geo=TcH(arg[2:6])
-    script.models[TcH(id)]=(geo,'geo',None,script.B2P(geo),script)
+    try:
+        script.models[TcH(id)]=(geo,'geo',None,script.B2P(geo),script)
+    except BankPointerException as e:
+        Log.Debug(e)
+        Log.Debug("Stacktrace:")
+        traceback.print_stack()
+        raise e
     return start
 
 #yep, this is what rock bottom coding looks like
@@ -384,7 +434,7 @@ def FormatScrollObject(scroll,verts,obj,s,area):
     offset=0
     #if verts are not in order, I can falsely assume the vert does not exist
     #becuase I see a gap and mistake it for the end of an area or something.
-    verts.sort(key=lambda x: x[0]) 
+    verts.sort(key=lambda x: x[0])
     for v in verts:
         if addr>=v[0]:
             closest = v[0]
@@ -491,7 +541,7 @@ def ConnectWarp(rom,cmd,start,script):
     W=(arg[0],arg[1],arg[2]+script.Aoffset,arg[3],arg[4], "WARP_NODE")
     A.warps.append(W)
     return start
-    
+
 def PaintingWarp(rom,cmd,start,script):
     A=script.GetArea()
     if not A:
@@ -500,7 +550,7 @@ def PaintingWarp(rom,cmd,start,script):
     W=(arg[0],arg[1],arg[2]+script.Aoffset,arg[3],arg[4], "PAINTING_WARP_NODE")
     A.warps.append(W)
     return start
-    
+
 def InstantWarp(rom,cmd,start,script):
     A=script.GetArea()
     if not A:
@@ -509,12 +559,12 @@ def InstantWarp(rom,cmd,start,script):
     W=(arg[0],arg[1],U2S(TcH(arg[2:4])),U2S(TcH(arg[4:6])),U2S(TcH(arg[6:8])), "INSTANT_WARP")
     A.warps.append(W)
     return start
-    
+
 def SetMarioDefault(rom,cmd,start,script):
     arg=cmd[2]
     script.mStart = [arg[0],U2S(TcH(arg[2:4])),U2S(TcH(arg[4:6])),U2S(TcH(arg[6:8])),U2S(TcH(arg[8:10]))]
     return start
-    
+
 def LoadCol(rom,cmd,start,script):
     arg=cmd[2]
     col=TcH(arg[2:6])
@@ -523,7 +573,7 @@ def LoadCol(rom,cmd,start,script):
         return start
     A.col=col
     return start
-    
+
 def LoadRoom(rom,cmd,start,script):
     return start
 
@@ -567,7 +617,7 @@ def PLC(rom,start):
         return (cmd,len,args,start)
     return PLC(rom,start)
 
-def WriteModel(rom, dls, s, name, Hname, id, tdir):
+def WriteModel(rom, dls, s, name, Hname, id, tdir, a):
     x = 0
     verts = None
     ModelData = []
@@ -585,11 +635,11 @@ def WriteModel(rom, dls, s, name, Hname, id, tdir):
                 Log.LevelFog(str(f))
             ModelData.append([starts, dl, verts, textures, amb, diff, ranges, 0])
         except:
-            print("{} has a broken level DL and is being skipped".format(Num2LevelName.get(s.Currlevel)))
+            Log.Warn('area', a, 'has a broken level DL')
         x+=1
         if verts:
             s.verts.extend(verts) #for texture scrolls
-        
+
     [refs, crcs] = F3D.ModelWrite(rom, ModelData, name, id, tdir, s.editor, s.Currlevel)
     modelH = name/'custom.model.inc.h'
     mh = open(modelH,'w')
@@ -613,9 +663,9 @@ def ClosestIntinDict(num,dict):
 
 def InsertBankLoads(s, tab):
     data = ""
-    
+
     banks = [s.banks[10],s.banks[15],s.banks[12],s.banks[13]]
-    
+
     for i,b in enumerate(banks):
         if not i:
             if s.editor:
@@ -652,9 +702,9 @@ def DetLevelSpecBank(s, f):
 
 def LoadUnspecifiedModels(s, level, tab=0):
     data = '\t' * tab + "// Unspecified Models\n"
-    
+
     Grouplines = Group_Models.split("\n")
-    
+
     for i, model in enumerate(s.models):
         if model:
             #Bank 0x14 is for menus, I will ignore it
@@ -718,101 +768,105 @@ def LoadUnspecifiedModels(s, level, tab=0):
 
 def WriteLevelScript(name,Lnum,s,level,Anum,envfx):
     tab = 1
-    
+
     data = ""
-    
+
     f = open(name, 'w')
     data += scriptHeader
-    
+
     for a in Anum:
         data += '#include "areas/%d/custom.model.inc.h"\n\n' % a
-    
+
     data += '#include "levels/%s/header.h"\n' % (Lnum)
-    
+
     # This is the ideal to match hacks, but currently the way the linker is
     # setup, level object data is in the same bank as level mesh so this cannot be done.
     LoadLevel = DetLevelSpecBank(s, f)
     if LoadLevel and LoadLevel != Lnum:
         data += '#include "levels/%s/header.h"\n\n' % LoadLevel
-        
+
     data += "extern u8 _%s_segment_ESegmentRomStart[];\nextern u8 _%s_segment_ESegmentRomEnd[];\n\n" % (Lnum, Lnum)
-    
+
     data += 'const LevelScript level_%s_custom_entry[] = {\n' % Lnum
     s.MakeDec('const LevelScript level_%s_custom_entry[]' % Lnum)
-    
+
     #entry stuff
     data += '\t' * tab + "INIT_LEVEL(),\n"
     if LoadLevel:
         data += '\t' * tab + "LOAD_MIO0(0x07, _" + LoadLevel + "_segment_7SegmentRomStart, _" + LoadLevel + "_segment_7SegmentRomEnd),\n"
         data += '\t' * tab + "LOAD_RAW(0x1A, _" + LoadLevel + "SegmentRomStart, _" + LoadLevel + "SegmentRomEnd),\n"
     data += '\t' * tab + "LOAD_RAW(0x0E, _" + Lnum + "_segment_ESegmentRomStart, _" + Lnum + "_segment_ESegmentRomEnd),\n"
-    
+
     if envfx:
         data += '\t' * tab + "LOAD_MIO0(        /*seg*/ 0x0B, _effect_mio0SegmentRomStart, _effect_mio0SegmentRomEnd),\n"
-        
+
     #add in loaded banks
     (banks, bankData) = InsertBankLoads(s, tab)
     # Add in the data from our bank loads.
     data += bankData
-    
+
     data += '\t' * tab + "ALLOC_LEVEL_POOL(),\n"
     data += '\t' * tab + "MARIO(/*model*/ MODEL_MARIO, /*behParam*/ 0x00000001, /*beh*/ bhvMario),\n"
     if LoadLevel:
         # Add a comment.
         data += '\t' * tab + "// Level Specific Models"
-        
+
         # Strip our models and split them so they can be tabbed.
         models = LevelSpecificModels[LoadLevel].rstrip()
         for model in models.split("\n"):
             data += "\n" + '\t' * tab + model
         data += "\n"
-        
+
     # Load models that the level uses that are outside groups/level
     data += LoadUnspecifiedModels(s, LoadLevel, tab)
-    
+
     #add in jumps based on banks returned
     for b in banks:
         if type(b)==list and len(b)>2:
             data += '\t' * tab + "JUMP_LINK("+b[3]+"),\n"
-            
+
     #a bearable amount of cringe
     for a in Anum:
         id = Lnum+"_"+str(a)+"_"
         data += '\t' * tab + 'JUMP_LINK(local_area_%s),\n' % id
-        
+
     # Write the end script.
     data += '\t' * tab + "FREE_LEVEL_POOL(),\n"
-    data += '\t' * tab + "MARIO_POS({}, {}, {}, {}, {}),\n".format(*s.mStart)
+    if hasattr(s, 'mStart'):
+        data += '\t' * tab + "MARIO_POS(/* area */ {}, /* yaw */ {}, /* pos */ {}, {}, {}),\n".format(*s.mStart)
+    else:
+        data += '\t' * tab + "MARIO_POS(/* area */ 1, /* yaw */ 0, /* pos */ 0, 0, 0), // TODO: No starting position were found. This is a default position\n"
+        Log.Error('level has no Mario starting position, that is very bad (a default pos was written)')
     data += '\t' * tab + "CALL(/*arg*/ 0, /*func*/ lvl_init_or_update),\n"
     data += '\t' * tab + "CALL_LOOP(/*arg*/ 1, /*func*/ lvl_init_or_update),\n"
     data += '\t' * tab + "CLEAR_LEVEL(),\n"
     data += '\t' * tab + "SLEEP_BEFORE_EXIT(/*frames*/ 1),\n"
     data += '\t' * tab + "EXIT(),\n"
     data += "};\n\n"
-    
+
     # Write out all of our areas.
     for a in Anum:
         id = Lnum + "_" + str(a) + "_"
         area = level[a]
         data += WriteArea(s, area, a, id)
-        
+
     # Strip all trailing whitespace and newlines in our data.
     data = data.rstrip()
-    
+
     # Write our data to the file.
     f.write(data)
 
 def WriteArea(s, area, Anum, id):
     tab = 1
     data = ""
-    
+
     # Begin Area
     ascript = "const LevelScript local_area_%s[]" % id
     data += ascript + ' = {\n'
     s.MakeDec(ascript)
-    
+
     Gptr = 'Geo_' + id + hex(area.geo)
-    
+
     data += '\t' * tab + "AREA(%d, %s),\n" % (Anum, Gptr)
     data += '\t' * tab + "TERRAIN(%s),\n" % ("col_" + id+ hex(area.col))
     data += '\t' * tab + "SET_BACKGROUND_MUSIC(0, %d),\n" % area.music
@@ -824,15 +878,15 @@ def WriteArea(s, area, Anum, id):
     data += '\t' * tab + "END_AREA(),\n"
     data += '\t' * tab + "RETURN()\n"
     data += "};\n\n"
-    
+
     # Reset our tabs
     tab = 1
-    
+
     # Begin Objects
     asobj = 'const LevelScript local_objects_%s[]' % id
     data += asobj + ' = {\n'
     s.MakeDec(asobj)
-    
+
     #write objects
     for o in area.objects:
         if s.texScrolls:
@@ -850,22 +904,22 @@ def WriteArea(s, area, Anum, id):
 
     data += '\t' * tab + "RETURN()\n"
     data += "};\n\n"
-    
+
     # Reset our tabs
     tab = 1
-    
+
     # Begin Warps
     aswarps = 'const LevelScript local_warps_%s[]' % id
     data += aswarps + ' = {\n'
     s.MakeDec(aswarps)
-    
+
     # Write Warps
     for w in area.warps:
         data += '\t' * tab + "{}({}, {}, {}, {}, {}),\n".format(w[-1], *w[:-1])
-        
+
     data += '\t' * tab + "RETURN()\n"
     data += "};\n\n"
-        
+
     # Write Macro Objects if they exist
     if hasattr(area, 'macros'):
         asobj = 'const MacroObject local_macro_objects_%s[]' % id
@@ -874,12 +928,12 @@ def WriteArea(s, area, Anum, id):
             data += '\t' * tab + "MACRO_OBJECT_WITH_BEH_PARAM({}, {}, {}, {}, {}, {}),\n".format(MacroNames[m[1]], m[0], *m[2:])
         data += '\t' * tab + "MACRO_OBJECT_END(),\n"
         data += "};\n\n"
-    
+
     return data
 
-def GrabOGDatH(q,rootdir,name):
-    dir = rootdir/'originals'/name
-    head = open(dir/'header.h','r')
+def GrabOGDatH(q,name):
+    file = get_resource('originals', name, 'header.h')
+    head = open(file, 'r')
     head = head.readlines()
     for l in head:
         if not l.startswith('extern'):
@@ -887,9 +941,10 @@ def GrabOGDatH(q,rootdir,name):
         q.write(l)
     return q
 
-def GrabOGDatld(L,rootdir,name):
-    dir = rootdir/'originals'/name
-    ld = open(dir/'leveldata.c','r')
+# Not used
+def GrabOGDatld(L,name):
+    file = get_resource('originals', name, 'leveldata.c')
+    ld = open(file, 'r')
     ld = ld.readlines()
     grabbed = []
     for l in ld:
@@ -917,8 +972,11 @@ def WriteVanillaLevel(rom,s,num,areas,rootdir,m64dir,AllWaterBoxes,Onlys,romname
     OnlySkip = any(Onlys)
     name=Num2Name[num]
     level=Path(rootdir)/'levels'/("%s"%name)
-    original = rootdir/'originals'/("%s"%name)
-    shutil.copytree(original,level)
+    original = get_resource('originals', name)
+    try:
+        shutil.copytree(original,level)
+    except FileNotFoundError:
+        return
     #open original script
     script = level / 'script.c'
     scriptO = open(script,'r')
@@ -976,7 +1034,7 @@ def WriteVanillaLevel(rom,s,num,areas,rootdir,m64dir,AllWaterBoxes,Onlys,romname
                 break
             else:
                 j+=1
-        
+
         for o in area.objects:
             Slines.insert(x,"OBJECT_WITH_ACTS({},{},{},{},{},{},{},{},{},{}),\n".format(*o))
         for w in area.warps:
@@ -1001,26 +1059,30 @@ def WriteLevel(rom, s, num, areas, rootdir, m64dir, AllWaterBoxes, Onlys, romnam
     ObjectOnly = Onlys[1]
     MusicOnly = Onlys[2]
     OnlySkip = any(Onlys)
-    name=Num2Name[num]
-    level=  Path(rootdir)/'levels'/("%s" % name)
-    original = rootdir/'originals'/("%s" % name)
+    name = Num2Name[num]
+    level = Path(rootdir)/'levels'/("%s" % name)
+    original = get_resource('originals', name)
     shutil.copytree(original,level)
     Areasdir = level/"areas"
     Areasdir.mkdir(exist_ok=True)
-    
-    #create area directory for each area
+
     envfx = 0
+    valid_areas = []
+    #create area directory for each area
     for a in areas:
         #area dir
         adir = Areasdir/("%d"%a)
         adir.mkdir(exist_ok=True)
         area=s.levels[num][a]
         Arom = area.rom
-        if area.music and not (ObjectOnly or WaterOnly):
-            [m64,seqNum] = RipSequence(Arom,area.music,m64dir,num,a,romname,MusicExtend)
-            if m64 not in m64s:
-                m64s.append(m64)
-                seqNums.append(seqNum)
+        if hasattr(area, "music"):
+            if area.music and not (ObjectOnly or WaterOnly):
+                [m64,seqNum] = RipSequence(Arom,area.music,m64dir,num,a,romname,MusicExtend)
+                if m64 not in m64s:
+                    m64s.append(m64)
+                    seqNums.append(seqNum)
+        else:
+            Log.Warn("area", a, "has no music (or not detected)")
         #get real bank 0x0e location
         s.RME(a,Arom)
         id = name+"_"+str(a)+"_"
@@ -1030,25 +1092,40 @@ def WriteLevel(rom, s, num, areas, rootdir, m64dir, AllWaterBoxes, Onlys, romnam
         else:
             CBG=0
             cskybox=''
-        (geo,dls,WB,vfx)=GW.GeoParse(Arom,area.geo,s,area.geo,id,cskybox,CBG,a)
-        #deal with some areas having it vs others not
-        if vfx:
-            envfx = 1
+
+        if hasattr(area, 'geo'):
+            (geo,dls,WB,vfx)=GW.GeoParse(Arom,area.geo,s,area.geo,id,cskybox,CBG,a)
+            #deal with some areas having it vs others not
+            if vfx:
+                envfx = 1
+            if not OnlySkip:
+                GW.GeoWrite(geo,adir/"custom.geo.inc.c",id)
+                for g in geo:
+                    s.MakeDec("const GeoLayout Geo_%s[]"%(id+hex(g[1])))
+        else:
+            Log.Error('area', a, 'has no geometry, that is very bad')
+            Log.Info('area', a, 'was not written')
+            continue
+
         if not OnlySkip:
-            GW.GeoWrite(geo,adir/"custom.geo.inc.c",id)
-            for g in geo:
-                s.MakeDec("const GeoLayout Geo_%s[]"%(id+hex(g[1])))
-        if not OnlySkip:
-            dls = WriteModel(Arom,dls,s,adir,"%s_%d"%(name.upper(),a),id,level)
+            dls = WriteModel(Arom,dls,s,adir,"%s_%d"%(name.upper(),a),id,level,a)
             if not dls:
-                print("{} has no Display Lists, that is very bad".format(name))
+                Log.Error('area', a, 'has no Display Lists, that is very bad')
+                Log.Info('area', a, 'was not written')
+                continue
             else:
                 for d in dls:
                     s.MakeDec("Gfx DL_%s[]"%(id+hex(d[1])))
+
         #write collision file
-        if not OnlySkip:
-            ColParse.ColWrite(adir/"custom.collision.inc.c",s,Arom,area.col,id)
-        s.MakeDec('const Collision col_%s[]'%(id+hex(area.col)))
+        if hasattr(area, 'col'):
+            if not OnlySkip:
+                    ColParse.ColWrite(adir/"custom.collision.inc.c",s,Arom,area.col,id)
+            s.MakeDec('const Collision col_%s[]'%(id+hex(area.col)))
+        else:
+            Log.Error('area', a, 'has no collision, that is very bad')
+            Log.Info('area', a, 'was not written')
+            continue
         #write mov tex file
         if not (ObjectOnly or MusicOnly):
             #WB = [types][array of type][box data]
@@ -1073,21 +1150,22 @@ def WriteLevel(rom, s, num, areas, rootdir, m64dir, AllWaterBoxes, Onlys, romnam
                 MovTex.write("{-1, NULL},\n};\n")
                 s.MakeDec("struct MovtexQuadCollection %sMovtex_%d[]"%(id,j))
                 AllWaterBoxes.append(["%sMovtex_%d"%(id,j),num,a,j])
-        print('finished area '+str(a)+ ' in level '+name)
+        valid_areas.append(a)
+        Log.Info('area', a, 'done')
     #now write level script
     if not (WaterOnly or MusicOnly):
-        WriteLevelScript(level/"custom.script.c",name,s,s.levels[num],areas,envfx)
+        WriteLevelScript(level/"custom.script.c",name,s,s.levels[num],valid_areas,envfx)
     s.MakeDec("const LevelScript level_%s_entry[]"%name)
     if not OnlySkip:
         #finally write header
         H=level/"header.h"
         q = open(H,'w')
-        headgaurd="%s_HEADER_H"%(name.upper())
-        q.write('#ifndef %s\n#define %s\n#include "types.h"\n#include "game/moving_texture.h"\n'%(headgaurd,headgaurd))
+        headguard="%s_HEADER_H"%(name.upper())
+        q.write('#ifndef %s\n#define %s\n#include "types.h"\n#include "game/moving_texture.h"\n'%(headguard,headguard))
         for h in s.header:
             q.write('extern '+h+';\n')
         #now include externs from stuff in original level
-        q = GrabOGDatH(q,rootdir,name)
+        q = GrabOGDatH(q,name)
         q.write("#endif")
         q.close()
         #append to geo.c, maybe the original works good always??
@@ -1095,7 +1173,7 @@ def WriteLevel(rom, s, num, areas, rootdir, m64dir, AllWaterBoxes, Onlys, romnam
         g = open(G,'w')
         g.write(geocHeader)
         g.write('#include "levels/%s/header.h"\n'%name)
-        for i,a in enumerate(areas):
+        for i,a in enumerate(valid_areas):
             geo = '#include "levels/%s/areas/%d/custom.geo.inc.c"\n'%(name,(i+1))
             g.write(geo) #add in some support for level specific objects somehow
         g.close
@@ -1105,7 +1183,7 @@ def WriteLevel(rom, s, num, areas, rootdir, m64dir, AllWaterBoxes, Onlys, romnam
         ld.write(ldHeader)
         Ftypes = ['custom.model.inc.c"\n','custom.collision.inc.c"\n']
         ld.write('#include "levels/%s/textureNew.inc.c"\n'%(name))
-        for i,a in enumerate(areas):
+        for i,a in enumerate(valid_areas):
             ld.write('#include "levels/%s/areas/%d/movtextNew.inc.c"\n'%(name,(i+1)))
             start = '#include "levels/%s/areas/%d/'%(name,(i+1))
             for Ft in Ftypes:
@@ -1201,7 +1279,7 @@ def ProcessScripts(rom,editor,Scripts):
     Models = {}
     #key=bhv, values = [ram addr, rom addr, models used with,script]
     Objects = {}
-    
+
     for s in Scripts:
         #banks
         for k,B in enumerate(s.banks):
@@ -1243,7 +1321,7 @@ def ProcessScripts(rom,editor,Scripts):
                     Objects[obj[8]] = [obj[-1],s.B2P(obj[-1]),[IDs[obj[0]]],s]
                 except:
                     pass
- 
+
     return [Banks,Models,Objects]
 
 #dictionary of actions to take based on script cmds
@@ -1310,7 +1388,7 @@ def RipSequence(rom,seqNum,m64Dir,Lnum,Anum,romname,MusicExtend):
     return [m64Name,seqNum+MusicExtend]
 
 def CreateSeqJSON(rom,m64s,rootdir,MusicExtend):
-    originals = rootdir/"originals"/"sequences.json"
+    originals = get_resource('originals', 'sequences.json')
     m64Dir = rootdir/'sound'
     m64s.sort(key=(lambda x: x[1]))
     origJSON = open(originals,'r')
@@ -1327,7 +1405,7 @@ def CreateSeqJSON(rom,m64s,rootdir,MusicExtend):
         bank = UPH(rom,seqMagic+(m64[1]-MusicExtend)*2)
         bank = UPB(rom,seqMagic+bank+1)
         if bank>37:
-            print("sound bank error, try exporting with different rom type (e.g. editor=0)\nseq json may not work properly")
+            Log.Warn("Sound bank error, try exporting with different rom type (e.g. editor=0)\nseq json may not work properly")
             break
         if MusicExtend:
             seqJSON.write("\t\"{}\": [\"{}\"],\n".format(m64[0],SoundBanks[bank]))
@@ -1358,7 +1436,7 @@ def RipInstBanks(rom, rootdir):
     try:
         d_s.main(rom, 0x57B720, 97856, 0x593560, 2216704, sampledir, instsdir)
     except:
-        print('sound bank exporting went wrong somewhere.')
+        Log.Warn('Sound bank exporting went wrong at the binary level.')
         traceback.print_exc()
 
 def AppendAreas(entry,script,Append):
@@ -1386,10 +1464,10 @@ def ExportLevel(rom, level, editor, Append, AllWaterBoxes, Onlys, romname, m64s,
     s = AppendAreas(entry, s, Append)
     s.Aoffset = 0
     s.editor = editor
-    rootdir = Path(sys.path[0])
+    rootdir = Path(get_path('.'))
     m64dir = rootdir/'sound'/"sequences"/"us"
     os.makedirs(m64dir, exist_ok=True)
-    
+
     #get all level data from script
     x=0
     while(True):
@@ -1399,7 +1477,7 @@ def ExportLevel(rom, level, editor, Append, AllWaterBoxes, Onlys, romname, m64s,
         # If there is no entry. Then we found a empty level entry.
         try:
             entry = jumps[q[0]](rom, q, q[3], s)
-        except:
+        except Exception:
             break
         x += 1
         #check for end, then loop
@@ -1408,7 +1486,7 @@ def ExportLevel(rom, level, editor, Append, AllWaterBoxes, Onlys, romname, m64s,
         #you've hit a inf loop, usually in end screens with no level
         if x > 10000:
             return s
- 
+
     #this tool isn't for exporting vanilla levels
     #so I export only objects for these levels
     if not s.banks[0x19]:
@@ -1418,9 +1496,8 @@ def ExportLevel(rom, level, editor, Append, AllWaterBoxes, Onlys, romname, m64s,
             traceback.print_exc()
         return s
 
-    LevelName = {**Num2Name}
     lvldefs.write("DEFINE_LEVEL(%s,%s)\n" % (Num2Name[level], "LEVEL_" + Num2LevelName.get(level, 'castle').upper()))
-    
+
     #now do level
     [AllWaterBoxes, m64s, seqNums] = WriteLevel(rom, s, level,s.GetNumAreas(level), rootdir, m64dir, AllWaterBoxes,Onlys, romname, m64s, seqNums, MusicExtend)
     return s
@@ -1455,10 +1532,10 @@ class Actor():
                 try:
                     self.ParseModels(val,k,rom,fold)
                 except:
-                    print('Model {} was in bank 0 and its rom address could not be detected properly'.format(k))
-                    
+                    Log.Warn('Model', k, 'was in bank 0 and its rom address could not be detected properly')
+
         #self.ExportPowerMeter(rom,val[0][5])
-        
+
     def ParseModels(self,val,k,rom,fold):
         fgeo = fold/'custom.geo.inc.c'
         fgeo = open(fgeo,'w')
@@ -1484,8 +1561,8 @@ class Actor():
         #doesn't happen
         v[5].editor=0
         self.WriteActorModel(rom,dls,v[5],k.split("/")[0]+'_'+k.split("/")[-1]+'_model',ids,fold,v[-1],k)
-        print('{} exported'.format(k))
-        
+        Log.Info(k, 'exported')
+
     def WriteActorModel(self,rom,dlss,s,Hname,ids,dir,groupname,foldname):
         x=0
         ModelData=[]
@@ -1496,17 +1573,17 @@ class Actor():
                 st = dls[x][0]
                 first = TcH(rom[st:st + 4])
                 c = rom[st]
-                
+
                 if first==0x01010101 or not F3D.DecodeFmt.get(c):
                     return
-                    
+
                 try:
                     (dl, verts, textures, amb, diff, ranges, starts, fog) = F3D.DecodeVDL(rom, dls[x], s, id, 0)
                     ModelData.append([starts, dl, verts, textures, amb, diff, ranges, id])
                 except:
-                    print("{} had a broken DL and cannot be exported".format(Hname))
+                    Log.Error(Hname, 'had a broken actor DL and cannot be exported', '(group: ' + groupname + ')')
                     traceback.print_exc()
-                    
+
                 x+=1
         #change tdir to level dir
         if groupname in Num2LevelName.values():
@@ -1536,7 +1613,7 @@ class Actor():
         #free memory because actors take a lot
         del ModelData,refs,mh
         gc.collect()
-        
+
     def CompareChecksums(self,crcs,id,fold):
         if id not in ActorCHKSM.__dict__.keys():
             Log.UnkModel(id,fold)
@@ -1548,7 +1625,7 @@ class Actor():
                     Log.UnkModel(id,fold)
                     return 1
         return 0
- 
+
     #Hardcode power meter export. Only exporting textures
     def ExportPowerMeter(self,rom,script):
         dir = self.dir / 'power_meter'
@@ -1603,7 +1680,7 @@ def ExportActors(actors,rom,Models,aDir):
         try:
             models = Models[actors]
         except:
-            print("group {} doesn't exist.\nHere are the avaiable groups\n{}".format(actors,list(Models.keys())))
+            Log.Warn('group', actors, "doesn't exist.\nHere are the avaiable groups:\n", list(Models.keys()))
             return
         if actors in levels:
             pass
@@ -1626,7 +1703,7 @@ def ExportActors(actors,rom,Models,aDir):
 
 def ExportObjects(reg,Objects,rom,ass,rootdir,editor):
     #key=bhv, values = [rom addr, ram addr, models used with,script]
-    bdir = rootdir / 'data' 
+    bdir = rootdir / 'data'
     os.makedirs(bdir,exist_ok=True)
     bdata = bdir / 'custom.behavior_data.inc.h'
     bdata = open(bdata,'w')
@@ -1634,7 +1711,7 @@ def ExportObjects(reg,Objects,rom,ass,rootdir,editor):
     collisions = []
     functions = []
     f=0 #stubbed
-    
+
     if type(reg)==list:
         for bhv,o in Objects.items():
             r = [re.search(a,bhv) for a in reg]
@@ -1680,7 +1757,7 @@ def ExportObjects(reg,Objects,rom,ass,rootdir,editor):
                 ExportActorCol(c,reg,rom,ass,C)
         else:
             ExportActorCol(col,reg,rom,ass,C)
-    
+
     if functions:
         ExportFunctions(functions,rom,bdir)
 
@@ -1706,9 +1783,9 @@ def ExportActorCol(col,reg,rom,ass,C):
         ColD = ColParse.ColWriteActor(cdir,col[1][3],rom,int(col[0]),id)
         checkCol(ColD,id,cdir,col[2],reg,cname)
         # C.write("{} = {}\n".format(id,ColD)) #used to generate data for checkCol
-        print('{} collision exported'.format(cname))
+        Log.Info(cname, 'collision exported')
     except:
-        print('{} collision could not be exported. Invalid address'.format(cname))
+        Log.Warn(cname, 'collision could not be exported. Invalid address')
 
 def checkCol(ColD,id,cdir,Bhv,reg,cname):
     if id not in ColComp.__dict__.keys():
@@ -1734,7 +1811,7 @@ def ExportFunctions(functions,rom,Bdir):
     FuncFile.write("#This file is provided only as a reference for manually recoding functions.\n\n")
     starts=[]
     #[addr (str),Bhv name,Function name,script]
-    
+
     for f in functions:
         script=f[3]
         start=V2P(script,int(f[0])&0X7FFFFFFF)
@@ -1804,11 +1881,11 @@ def ExportBhv(rom,o,bdata,bhv,check,f,editor):
             [bdata.write(s+',\n') for s in BhvScript]
             bdata.write('};\n\n')
         except:
-            print("Behavior {} failed to export".format(bhv))
+            Log.Warn('Behavior', bhv, 'failed to export')
             col=[]
             new=0
             #traceback.print_exc()
-            
+
     return [cols,funcs,new]
 
 def CompareBeh(BhvScript,bhv):
@@ -1866,13 +1943,12 @@ def ExportTextures(rom,editor,rootdir,Banks,inherit):
         skyboxes = skyboxesRM
     #Check for custom skyboxes using Banks
     skyboxes = {**FindCustomSkyboxse(rom,Banks,SB),**skyboxes}
-    p = mp.Pool(mp.cpu_count())
     for k,v in skyboxes.items():
         imgs = []
         name = v.split('_')[1]
         if name=='cloud':
             name='cloud_floor'
-        imgs = p.starmap(ExportSkyTiles,[(SB,rom,v,k,i) for i in range(0x40)])
+        imgs = map(ExportSkyTiles,[(SB,rom,v,k,i) for i in range(0x40)])
         # for i in range(0x40):
             # namet = v.split('_')[1]+str(i)
             # box = BinPNG.MakeImage(str(SB / namet))
@@ -1886,8 +1962,8 @@ def ExportTextures(rom,editor,rootdir,Banks,inherit):
             BinPNG.TileSkybox(FullBox,x,y,tile)
         FullBox.save(str(SB / (name+'.png')))
         [os.remove(Path(img)) for img in imgs]
-        print('skybox %s done'%name)
-    print('skyboxes done')
+        Log.Info('Skybox', name, 'done')
+    Log.Info('Skyboxes done')
     ExportSeg2(rom,Textures,s)
 
 def ExportSkyTiles(SB,rom,v,k,i):
@@ -1973,6 +2049,7 @@ def ExportSeg2(rom,Textures,s):
             BinPNG.IA(32,32,16,bin,glyph)
         else:
             BinPNG.RGBA16(32,32,bin,glyph)
+    Log.Info("Segment2 done")
 
 def ExportInternalName(rom,src):
     IntNameS = open(src/'internal_name.s','w')
@@ -2019,7 +2096,7 @@ def ExportMisc(rom,rootdir,editor):
 """)
     for k, v in Trajectories.items():
         DirectLoad = False
-        
+
         # Loaded via asm
         if k == 'ccm_seg7_trajectory_penguin_race_RM2C' or k == 'ccm_seg7_trajectory_snowman_RM2C':
             AddrBase = UPA(rom, v[0], '>H', 2)[0] << 16
@@ -2033,11 +2110,9 @@ def ExportMisc(rom,rootdir,editor):
             DirectLoad = True
         else:
             Dat = UPA(rom, v, '>L', 4)[0]
-            
-        print(hex(Dat), ' ', k, ' ', hex(Dat >> 24), '\n',)
-        
+
         NewTraj = ""
-        
+
         #Check if Dat is in a segment or not
         try:
             if Dat >> 24 == 0x7:
@@ -2066,9 +2141,9 @@ def ExportMisc(rom,rootdir,editor):
             NewTraj = "" # Reset the traj data.
             NewTraj += '\n//%s Has the default vanilla value or an unrecognizable pointer\n' % k
             NewTraj += DefaultTraj[k]
-            
+
         Trj.write(NewTraj)
-            
+
     #Star positions
     SP = open(StarPos,'w')
     #pre editor and post editor do star positions completely different.
@@ -2235,7 +2310,7 @@ def ExportWaterBoxes(AllWaterBoxes,rootdir):
     MovtexEdit = misc/"moving_texture.inc.c"
     AllWaterBoxes.sort(key=(lambda x: [x[1],x[2],x[3]])) #level,area,type
     if not AllWaterBoxes:
-        print("no water boxes")
+        Log.Info("No water boxes")
         return
     MTinc = open(MovtexEdit,'w')
     MTinc.write(infoMsg)
@@ -2314,11 +2389,11 @@ def ExportTitleScreen(rom,level):
     #somehow title screens have issues
     try:
         Rtitleptr = s.B2P(titleptr)
-    except:
+    except BankPointerException:
         return
     intro = level/'intro'
     intro.mkdir(exist_ok=True)
-    WriteModel(rom,[[Rtitleptr,titleptr]],s,intro,'TITLESCREEN','intro_seg7_',intro)
+    WriteModel(rom,[[Rtitleptr,titleptr]],s,intro,'TITLESCREEN','intro_seg7_',intro,None)
     #Make leveldata.c for intro
     ld = intro/ 'leveldata.c'
     ld = open(ld,'w')
@@ -2348,15 +2423,21 @@ def ExportTitleScreen(rom,level):
 
 def main(levels = [], actors = [], editor = False, rom = '', Append = [], WaterOnly = 0, ObjectOnly = 0,
 MusicOnly = 0, MusicExtend = 0, Text = None, Misc = None, Textures = 0, Inherit = 0, Upscale = 0,
-Title = 0, Sound = 0, Objects = 0):
+Title = 0, Sound = 0, Objects = 0, MoreLevels = False):
     #This is not an arg you should edit really
     TxtAmount = 170
     romname = rom.split(".")[0]
+    rompath = get_path(rom)
     fullromname = rom
-    rom = open(rom, 'rb')
-    rom = rom.read()
-    root = sys.path[0]
-    
+    try:
+        rom = open(rompath, 'rb')
+        rom = rom.read()
+    except FileNotFoundError:
+        Log.Error('ROM File not found:', rompath)
+        Log.Error('Please make sure the ROM is in the same folder as the .exe if you only put the file name!')
+        return
+    root = get_path('.')
+
     # Correct our string params
     if type(levels)==str:
         levels = levels.replace("'", "")
@@ -2367,34 +2448,40 @@ Title = 0, Sound = 0, Objects = 0):
 
     #Export dialogs and course names
     if (Text or levels=='all') and Text != 0:
+        Log.Info("Starting Text")
+        Log.Indent()
         for A in Append:
             Arom = open(A[0],'rb')
             Arom = Arom.read()
             ExportText(Arom,Path(root),TxtAmount)
         ExportText(rom,Path(root),TxtAmount)
-        print('Text Finished')
+        Log.Unindent()
+        Log.Info("Text done")
 
     #Export misc data like trajectories or star positions.
     if (Misc or levels=='all') and Misc != 0:
+        Log.Info("Starting Misc")
+        Log.Indent()
         for A in Append:
             Arom = open(A[0],'rb')
             Arom = Arom.read()
             ExportMisc(Arom,Path(root),A[2])
         ExportMisc(rom,Path(root),editor)
-        print('Misc Finished')
+        Log.Unindent()
+        Log.Info("Misc done")
 
-    print('Starting Export')
+    Log.Info('Starting exporting levels')
     AllWaterBoxes = []
     m64s = []
     seqNums = []
     Onlys = [WaterOnly,ObjectOnly,MusicOnly]
-    
+
     #clean sound dir
     sound = Path(root) / 'sound'
     if not Inherit:
         if os.path.isdir(sound):
             shutil.rmtree(sound)
- 
+
     #custom level defines file so the linker knows whats up. Mandatory or export won't work
     lvldir = Path(root) / 'levels'
 
@@ -2402,71 +2489,82 @@ Title = 0, Sound = 0, Objects = 0):
     if not Inherit:
         if os.path.isdir(lvldir):
             shutil.rmtree(lvldir)
- 
+
     lvldir.mkdir(exist_ok=True)
     lvldefs = lvldir/"custom_level_defines.h"
     lvldefs = open(lvldefs,'w')
-        
+
+    #Array of all scripts from each level
+    Scripts = []
+    lvls = []
+    if levels == 'all':
+        lvls = filter(lambda k: not Num2Name[k].startswith('unk'), Num2Name.keys())
+    elif levels == 'allplus':
+        lvls = Num2Name.keys()
+    else:
+        lvls = filter(lambda l: l in Num2Name, levels)
+
+    for k in lvls:
+        lvlName = Num2Name[k].upper()
+        Log.Info("Level", k, "(" + lvlName + ")" if not lvlName.startswith('UNK') else '')
+        Log.Indent()
+        s = ExportLevel(rom, k, editor, Append, AllWaterBoxes, Onlys, romname, m64s, seqNums, MusicExtend, lvldefs)
+        Scripts.append(s)
+        Log.Unindent()
+
+    lvldefs.close()
+    gc.collect() #gaurantee some mem is freed up.
+
+    #Export texture scrolls
+    ExportTextureScrolls(Scripts,Path(root))
+
+    #export title screen via arg
+    if Title:
+        ExportTitleScreen(rom,lvldir)
+
+    #Process returned scripts to view certain custom data such as custom banks/actors for actor/texture exporting
+    [Banks,Models,ObjectD] = ProcessScripts(rom,editor,Scripts)
+
     ass=Path("actors")
     ass=Path(root)/ass
     if not Inherit and (actors or Objects):
         if os.path.isdir(ass):
             shutil.rmtree(ass)
     ass.mkdir(exist_ok=True)
-    
-    #Array of all scripts from each level
-    Scripts = []
-    if levels=='all':
-        for k in Num2Name.keys():
-            s = ExportLevel(rom, k, editor, Append, AllWaterBoxes, Onlys, romname, m64s, seqNums, MusicExtend, lvldefs)
-            Scripts.append(s)
-            print(Num2Name[k] + ' done')
-    else:
-        for k in levels:
-            if not Num2Name.get(k):
-                continue
-            s = ExportLevel(rom, k, editor, Append, AllWaterBoxes, Onlys, romname, m64s, seqNums, MusicExtend, lvldefs)
-            Scripts.append(s)
-            print(Num2Name[k] + ' done')
- 
-    lvldefs.close()
-    gc.collect() #gaurantee some mem is freed up.
-    
-    #Export texture scrolls
-    ExportTextureScrolls(Scripts,Path(root))
-    
-    #export title screen via arg
-    if Title:
-        ExportTitleScreen(rom,lvldir)
-        
-    #Process returned scripts to view certain custom data such as custom banks/actors for actor/texture exporting
-    [Banks,Models,ObjectD] = ProcessScripts(rom,editor,Scripts)
-    
+
     if actors:
         ExportActors(actors,rom,Models,ass)
-        
+
     #Behaviors
     if Objects:
         ExportObjects(Objects,ObjectD,rom,ass,Path(root),editor)
-        
+
     #export textures
     if Textures:
+        Log.Info("Starting Textures")
+        Log.Indent()
         ExportTextures(rom,editor,Path(root),Banks,Inherit)
-        
+        Log.Unindent()
+        Log.Info("Textures done")
+
     #AllWaterBoxes should have refs to all water boxes, using that, I will generate a function
     #and array of references so it can be hooked into moving_texture.c
     #example of AllWaterBoxes format [[str,level,area,type]...]
     if not (MusicOnly or ObjectOnly):
+        Log.Info("Starting Water Boxes")
+        Log.Indent()
         ExportWaterBoxes(AllWaterBoxes,Path(root))
- 
+        Log.Unindent()
+        Log.Info("Water Boxes done")
+
     if not (WaterOnly or ObjectOnly):
         RipNonLevelSeq(rom, m64s, seqNums, Path(root), MusicExtend, romname)
         CreateSeqJSON(rom, list(zip(m64s, seqNums)), Path(root), MusicExtend)
         if Sound:
             RipInstBanks(fullromname, Path(root))
- 
+
     Log.WriteWarnings()
-    print('Export Completed, see ImportInstructions.py for potential errors when importing to decomp')
+    Log.Info('Export Completed, see ImportInstructions.py for potential errors when importing to decomp')
 
 if __name__=='__main__':
     argD = {}
@@ -2475,15 +2573,20 @@ if __name__=='__main__':
         args+=arg+" "
     try:
         #the utmosts of cringes
+        Log.Debug("ARGUMENTS: " + ", ".join(sys.argv))
         for arg in sys.argv:
-            if arg=='RM2C.py':
+            if not re.search("\w+=.+", arg):
                 continue
             arg = arg.split('=')
-            argD[arg[0]]=arg[1]
+            if not arg[0] in ["levels", "actors", "editor", "rom", "Append", "WaterOnly", "ObjectOnly", "MusicOnly", "MusicExtend", "Text", "Misc", "Textures", "Inherit", "Upscale", "Title", "Sound", "Objects"]:
+                Log.Warn("Invalid argument:", arg[0])
+                continue
+            argD[arg[0]]=eval(arg[1]) if not re.search("[a-z][a-z0-9_]+", arg[1]) else arg[1]
+        Log.Debug("FOUND: " + ", ".join(argD))
     except:
         print(HelpMsg)
         a = "\\".join(args)
-        a = "python3 RM2C.py "+a
+        a = "RM2C.exe "+a
         print("If you are using terminal try using this\n"+a)
         raise 'bad arguments'
     main(**argD)

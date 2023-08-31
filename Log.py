@@ -1,11 +1,9 @@
 #This module is meant to do cross module logging of stuff to look out for when importing to decomp
 #and also go give general warnings and instructions for people who don't know much
-import sys
 from RM2CData import *
+from Utils import get_path
 
-log = sys.path[0]
-
-log = open(log+'//ImportInstructions.py','w')
+log = open(get_path('ImportInstructions.py'), 'w')
 
 log.write("""This file will contain instructions on how to import RM2C data into the sm64ex-alo repo.
 First you should always copy the exported folders (/src,/levels,/sound,/text,/textures,/actors) into your repo.
@@ -39,7 +37,7 @@ def InvalidScroll(level,area,scroll):
 	else:
 		BadScroll.append((level,area,scroll))
 		err = 'Texture Scroll Object in level {} area {} at {} has unrecognized address. Object Has been commented out.'.format(Num2Name[level],area,hex(scroll[2]))
-		print(err)
+		Warn(err)
 		Scrollerrs.append(err+'\n')
 
 LastFog=[]
@@ -52,7 +50,7 @@ def LevelFog(file):
 	else:
 		LastFog.append(file)
 		err = 'Model file {} has fog, for editor, fog DLs are heavily edited, potential for gfx errors.'.format(file)
-		print(err)
+		Warn(err)
 		Fogerrs.append(err+'\n')
 
 UnkObjs = []
@@ -65,14 +63,14 @@ def UnkObject(level,Area,bhv):
 	else:
 		UnkObjs.append((level,Area,bhv))
 		err = 'Level {} Area {} has object {} with no known label.'.format(Num2Name[level],Area,bhv)
-		print(err)
+		Warn(err)
 		Objerrs.append(err+'\n')
 
 NewObjs = []
 def NewObject(bhv):
 	global NewObjs
 	err = 'Behavior {} has custom values or new values inside of it.'.format(bhv)
-	print(err)
+	Warn(err)
 	NewObjs.append(err+'\n')
 
 UnkModels=[]
@@ -134,3 +132,29 @@ If you have issues with certain m64s sounding garbled, extend gAlBankSets in loa
 If sound cuts out at certain points, extend values in gAudioSessionPresets.
 On all builds, if an out of bounds array access happens (often with high sequence numbers) the game will crash or have audio issues.
 """
+
+indent = 0
+def Indent():
+	global indent
+	indent += 1
+
+def Unindent():
+	global indent
+	if indent > 0:
+		indent -= 1
+
+def Log(prefix, *msg):
+	global indent
+	print(prefix, ("  " * indent) + ' '.join(map(str, msg)))
+
+def Info(*msg):
+	Log("[INFO.]", *msg)
+
+def Warn(*msg):
+	Log("[WARN.]", *msg)
+
+def Error(*msg):
+	Log("[ERROR]", *msg)
+
+def Debug(*msg):
+	Log("[DEBUG]", *msg)

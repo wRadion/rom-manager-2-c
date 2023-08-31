@@ -8,6 +8,7 @@ import os
 import re
 import struct
 import sys
+import Log
 
 TYPE_CTL = 1
 TYPE_TBL = 2
@@ -385,7 +386,7 @@ def parse_seqfile(data, filetype):
             if not offset == prev:
                 global ExtC
                 if not ExtC:
-                    print("Extended Bank C detected. No .AIFF files will be exported")
+                    Log.Info("Extended Bank C detected. No .AIFF files will be exported")
                 ExtC=True
         else:
             assert offset <= prev

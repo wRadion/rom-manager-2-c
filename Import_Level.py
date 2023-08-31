@@ -1,32 +1,21 @@
 import bpy
-
 from bpy.props import (StringProperty,
                        BoolProperty,
-                       IntProperty,
-                       FloatProperty,
-                       FloatVectorProperty,
                        EnumProperty,
                        PointerProperty,
-                       IntVectorProperty,
-                       BoolVectorProperty
                        )
 from bpy.types import (Panel,
-                       Menu,
                        Operator,
                        PropertyGroup,
                        )
-from array import array
 import os
 from struct import *
-import sys
 import math
-from shutil import copy
 from pathlib import Path
-from types import ModuleType
-from mathutils import Vector
 from mathutils import Euler
 import re
 from copy import deepcopy
+import Log
 #from SM64classes import *
 
 bl_info = {
@@ -154,7 +143,7 @@ class Area():
                     setattr(Obj,form.format(i),True)
                 else:
                     setattr(Obj,form.format(i),False)
-    
+
 class Level():
     def __init__(self,scr,scene,root):
         self.script=scr
@@ -314,7 +303,7 @@ class Level():
                 x+=1
             self.Scripts[k]=arr
         return
-        
+
 class Collision():
     def __init__(self,col,scale):
         self.col=col
@@ -412,7 +401,6 @@ class Collision():
                 mat.node_tree.nodes["Shade Color"].inputs[2].default_value=color #required because no callback can be applied for script set prop
                 #check for param
                 if len(self.Types[x][2])>3:
-                    print(self.Types[x][2])
                     mat.use_collision_param = True
                     mat.collision_param = str(self.Types[x][2][3])
                 x+=1
@@ -424,7 +412,7 @@ class Mat():
         self.TwoCycle=False
         self.GeoSet=[]
         self.GeoClear=[]
-        
+
     #calc the hash for an f3d mat and see if its equal to this mats hash
     def MatHashF3d(self,f3d,textures):
         #texture,1 cycle combiner, geo modes (once I implement them)
@@ -446,10 +434,10 @@ class Mat():
             dupe = hash(MyProps) == hash(F3Dprops)
             return dupe
         return False
-        
+
     def MatHash(self,mat,textures):
         return False
-        
+
     def LoadTexture(self, ForceNewTex, textures, path):
         tex = textures.get(self.Timg)[0].split('/')[-1]
         tex=tex.replace("#include ",'').replace('"','').replace("'",'').replace("inc.c","png")
@@ -467,20 +455,20 @@ class Mat():
             else:
                 fp = path/tex
             newImage = bpy.data.images.load(filepath=str(fp))
-            
+
             # This fucking crashes Blender lmao.
             # It's valid but it also freaks Blender out.
             #override = bpy.context.copy()
             #override['edit_image'] = newImage
             #if bpy.ops.image.flip.poll(override):
             #    bpy.ops.image.flip(override, use_flip_x=True, use_flip_y=True)
-            
+
             #newImage.name = newImage.name.replace(".rgba16.png", '')
             newImage.name = str(len(bpy.data.images))
             return newImage
         else:
             return image
-            
+
     def ApplyPBSDFMat(self,mat,textures,path,layer):
         nt = mat.node_tree
         nodes = nt.nodes
@@ -494,7 +482,7 @@ class Mat():
             tex.image = image
         if int(layer) > 4:
             mat.blend_method == 'BLEND'
-            
+
     def ApplyMatSettings(self,mat,textures,path,layer):
         if bpy.context.scene.LevelImp.AsObj:
             return self.ApplyPBSDFMat(mat,textures,path,layer)
@@ -520,24 +508,24 @@ class Mat():
             tex0.tex=i
             tex0.tex_format = self.EvalFmt()
         except:
-            print("Could not find {}".format(self.Timg))
+            Log.Warn('Could not find', self.Timg)
         #Update node values
         override = bpy.context.copy()
         override["material"] = mat
         bpy.ops.material.update_f3d_nodes(override)
-        
+
     def SetGeoMode(self,rdp,mat):
         for a in self.GeoSet:
             try:
                 setattr(self,a.lower(),True)
             except:
-                print(a.lower(),'set')
+                Log.Debug(a.lower(),'set')
         for a in self.GeoClear:
             try:
                 setattr(self,a.lower(),False)
             except:
-                print(a.lower(),'clear')
-                
+                Log.Debug(a.lower(),'clear')
+
     #Very lazy for now
     def SetCombiner(self,f3d,layer):
         if not hasattr(self,'Combiner'):
@@ -588,7 +576,7 @@ class Mat():
             f3d.combiner2.B_alpha = self.Combiner[13]
             f3d.combiner2.C_alpha = self.Combiner[14]
             f3d.combiner2.D_alpha = self.Combiner[15]
-            
+
     def EvalFmt(self):
         GBIfmts = {
         "G_IM_FMT_RGBA":"RGBA",
@@ -732,7 +720,7 @@ class F3d():
             if LsW('gsDPSetTile'):
                 self.NewMat=1
                 self.LastMat.Fmt=args[0].strip()
-                self.LastMat.Siz=args[1].strip()    
+                self.LastMat.Siz=args[1].strip()
     def MakeNewMat(self):
         if self.NewMat:
             self.NewMat=0
@@ -886,7 +874,7 @@ def FindCollisions(model,lvl,scene,path):
                         v.ColFile=c[i:]
                         break
                 else:
-                    c=None    
+                    c=None
                     continue
                 break
             else:
@@ -1353,7 +1341,7 @@ class SM64_OT_Act_Import(Operator):
         Root = bpy.data.objects.new('Empty',None)
         Root.name = 'Actor %s'%scene.ActImp.GeoLayout
         scene.collection.objects.link(Root)
-        
+
         Geo = FindActModels(geo,Layout,scene,Root,folder) #return geo layout class and write the geo layout
         models=FindModelDat(leveldat,scene,folder)
         models.GetGenericTextures(path)
@@ -1543,10 +1531,10 @@ class LevelImport(PropertyGroup):
 class Level_PT_Panel(Panel):
     bl_label = "SM64 Level Importer"
     bl_idname = "sm64_level_importer"
-    bl_space_type = "VIEW_3D"   
+    bl_space_type = "VIEW_3D"
     bl_region_type = "UI"
     bl_category = "SM64 C Importer"
-    bl_context = "objectmode"   
+    bl_context = "objectmode"
 
     @classmethod
     def poll(self,context):
@@ -1572,10 +1560,10 @@ class Level_PT_Panel(Panel):
 class Actor_PT_Panel(Panel):
     bl_label = "SM64 Actor Importer"
     bl_idname = "sm64_actor_importer"
-    bl_space_type = "VIEW_3D"   
+    bl_space_type = "VIEW_3D"
     bl_region_type = "UI"
     bl_category = "SM64 C Importer"
-    bl_context = "objectmode"   
+    bl_context = "objectmode"
 
     @classmethod
     def poll(self,context):

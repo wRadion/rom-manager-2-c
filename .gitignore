@@ -13,3 +13,5 @@ textures/**
 ImportInstructions.py
 data/**
 include/**
+build/**
+dist/**
