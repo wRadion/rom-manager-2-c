@@ -373,7 +373,7 @@ def ModelWrite(rom, ModelData, nameG, id, tdir, opt, level):
 				f.write("\t" + c + ',\n')
 			f.write('};\n\n')
 	f.close()
-	crcs = map(WriteTex, Pngs)
+	crcs = list(map(WriteTex, Pngs))
 	return [refs,crcs]
 
 def WriteTex(Pngs):

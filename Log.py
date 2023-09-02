@@ -148,10 +148,10 @@ def Log(prefix, *msg):
 	print(prefix, ("  " * indent) + ' '.join(map(str, msg)))
 
 def Info(*msg):
-	Log("[INFO.]", *msg)
+	Log("[INFO] ", *msg)
 
 def Warn(*msg):
-	Log("[WARN.]", *msg)
+	Log("[WARN] ", *msg)
 
 def Error(*msg):
 	Log("[ERROR]", *msg)

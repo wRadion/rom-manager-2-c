@@ -1480,7 +1480,7 @@ def ExportLevel(rom, level, editor, Append, AllWaterBoxes, Onlys, romname, m64s,
         # If there is no entry. Then we found a empty level entry.
         try:
             entry = jumps[q[0]](rom, q, q[3], s)
-        except Exception:
+        except:
             break
         x += 1
         #check for end, then loop
@@ -2436,6 +2436,10 @@ Title = 0, Sound = 0, Objects = 0, MoreLevels = False):
     try:
         rom = open(rompath, 'rb')
         rom = rom.read()
+        if os.path.getsize(rompath) >> 10 <= 8192:
+            Log.Error("ROM is not extended. It most likely wasn't made with ROM Manager or SM64 Editor.")
+            Log.Error("RM2C is only compatible with ROM Manager or SM64 Editor ROMs.")
+            return
     except FileNotFoundError:
         Log.Error('ROM File not found:', rompath)
         Log.Error('Please make sure the ROM is in the same folder as the .exe if you only put the file name!')
