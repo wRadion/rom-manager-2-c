@@ -626,7 +626,10 @@ def WriteModel(rom, dls, s, name, Hname, id, tdir, a):
         st = dls[x][0]
         first = TcH(rom[st:st + 4])
         c = rom[st]
-        if first==0x01010101 or not F3D.DecodeFmt.get(c):
+        if first==0x01010101:
+            return
+        if not c in F3D.DecodeFmt:
+            Log.Error('Unknown F3D display list command:', hex(c))
             return
         try:
             (dl, verts, textures, amb, diff, ranges, starts, fog) = F3D.DecodeVDL(rom, dls[x], s, id, 1)
@@ -1573,10 +1576,11 @@ class Actor():
                 st = dls[x][0]
                 first = TcH(rom[st:st + 4])
                 c = rom[st]
-
-                if first==0x01010101 or not F3D.DecodeFmt.get(c):
+                if first==0x01010101:
                     return
-
+                if not c in F3D.DecodeFmt:
+                    Log.Error('Unknown F3D display list command:', hex(c))
+                    return
                 try:
                     (dl, verts, textures, amb, diff, ranges, starts, fog) = F3D.DecodeVDL(rom, dls[x], s, id, 0)
                     ModelData.append([starts, dl, verts, textures, amb, diff, ranges, id])
@@ -2558,10 +2562,14 @@ Title = 0, Sound = 0, Objects = 0, MoreLevels = False):
         Log.Info("Water Boxes done")
 
     if not (WaterOnly or ObjectOnly):
+        Log.Info("Starting Musics")
+        Log.Indent()
         RipNonLevelSeq(rom, m64s, seqNums, Path(root), MusicExtend, romname)
         CreateSeqJSON(rom, list(zip(m64s, seqNums)), Path(root), MusicExtend)
         if Sound:
             RipInstBanks(fullromname, Path(root))
+        Log.Unindent()
+        Log.Info("Musics done")
 
     Log.WriteWarnings()
     Log.Info('Export Completed, see ImportInstructions.py for potential errors when importing to decomp')

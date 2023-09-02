@@ -536,7 +536,10 @@ def write_aiff(entry, filename):
         temp.flush()
         temp.close()
         aifc_decode = get_resource('aifc_decode.exe')
-        subprocess.run([aifc_decode, temp.name, filename], check=True)
+        try:
+            subprocess.run([aifc_decode, temp.name, filename], check=True, timeout=5)
+        except subprocess.TimeoutExpired:
+            Log.Error('aifc_decode stopped after 5 sec timeout, which is not normal')
     finally:
         temp.close()
         os.remove(temp.name)

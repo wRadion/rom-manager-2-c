@@ -108,14 +108,17 @@ def OptimizeModeldata(ModelData):
 			#inside the mat, make a dictionary of every vertex load, and the subsequent triangles
 			for cmd in mat:
 				if cmd.startswith('gsSPVertex'):
-					lastLoad =cmd
+					lastLoad = cmd
 					if not VertDict.get(cmd):
 						VertDict[cmd] = []
 				if StartTri(cmd):
-					if cmd not in VertDict[lastLoad]:
-						VertDict[lastLoad].append(cmd)
+					if lastLoad in VertDict:
+						if cmd not in VertDict[lastLoad]:
+							VertDict[lastLoad].append(cmd)
+						else:
+							Log.Debug('Cmd not in last vertex load:', cmd)
 					else:
-						Log.Debug(cmd)
+						Log.Warn('There probably was an issue optimizing the model')
 			#Now VertDict is optimized to only have the triangles that matter.
 			#Now remake material with first grabbing all material data, then when encountering first tri draw fill in via dictionary instead
 			x=0
@@ -388,6 +391,8 @@ def WriteTex(Pngs):
 
 class F3D_decode():
 	def __init__(self,cmd):
+		if not cmd in DecodeFmt:
+			Log.Error('Unknown F3D display list command:', hex(cmd))
 		self.fmt=DecodeFmt[cmd][0]
 		self.func=DecodeFmt[cmd][1]
 
