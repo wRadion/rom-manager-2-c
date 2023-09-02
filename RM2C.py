@@ -24,7 +24,7 @@ import ColComp
 #So that each Script class doesn't open up a half MB file.
 from Utils import get_path, get_resource
 
-map = open(get_resource('sm64.us.map'),'r').readlines()
+ROM_MAP = open(get_resource('sm64.us.map'),'r').readlines()
 
 class BankPointerException(Exception):
     def __init__(self, message):
@@ -32,8 +32,8 @@ class BankPointerException(Exception):
 
 class Script():
     def __init__(self,level):
-        global map
-        self.map=map
+        global ROM_MAP
+        self.map=ROM_MAP
         self.banks=[None for a in range(32)]
         self.asm=[[0x80400000,0x1200000,0x1220000],[0x80246000,0x1000,0x21f4c0]]
         self.models=[None for a in range(256)]
@@ -631,7 +631,7 @@ def WriteModel(rom, dls, s, name, Hname, id, tdir, a):
         try:
             (dl, verts, textures, amb, diff, ranges, starts, fog) = F3D.DecodeVDL(rom, dls[x], s, id, 1)
             if fog:
-                f = name.relative_to(Path(sys.path[0])) / 'custom.model.inc.c'
+                f = name.relative_to(get_path('.')) / 'custom.model.inc.c'
                 Log.LevelFog(str(f))
             ModelData.append([starts, dl, verts, textures, amb, diff, ranges, 0])
         except:
@@ -1506,8 +1506,8 @@ class Actor():
     def __init__(self,aDir,actors):
         self.folders ={}
         self.dir = aDir
-        rdir = Path(sys.path[0])
         self.ExpType=actors
+        # rdir = Path(sys.path[0])
         # self.CHKSM = open(rdir/'ActorCHKSM.py','w') This was written for checksum collection purposes
 
     def EvalModel(self,model,group):
@@ -1587,7 +1587,7 @@ class Actor():
                 x+=1
         #change tdir to level dir
         if groupname in Num2LevelName.values():
-            tdir = Path(sys.path[0])/'levels'/groupname
+            tdir = Path(get_path('levels', groupname))
             os.makedirs(tdir, exist_ok=True)
             [refs, crcs] = F3D.ModelWrite(rom, ModelData, dir, ids[0], tdir, s.editor, s.Currlevel)
         else:
@@ -1948,7 +1948,7 @@ def ExportTextures(rom,editor,rootdir,Banks,inherit):
         name = v.split('_')[1]
         if name=='cloud':
             name='cloud_floor'
-        imgs = map(ExportSkyTiles,[(SB,rom,v,k,i) for i in range(0x40)])
+        imgs = map(lambda i: ExportSkyTiles(SB,rom,v,k,i),[i for i in range(0x40)])
         # for i in range(0x40):
             # namet = v.split('_')[1]+str(i)
             # box = BinPNG.MakeImage(str(SB / namet))
@@ -1960,8 +1960,8 @@ def ExportTextures(rom,editor,rootdir,Banks,inherit):
             x=(j*31)%248
             y=int((j*31)/248)*31
             BinPNG.TileSkybox(FullBox,x,y,tile)
+            os.remove(tile)
         FullBox.save(str(SB / (name+'.png')))
-        [os.remove(Path(img)) for img in imgs]
         Log.Info('Skybox', name, 'done')
     Log.Info('Skyboxes done')
     ExportSeg2(rom,Textures,s)

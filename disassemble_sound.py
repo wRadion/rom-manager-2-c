@@ -9,6 +9,7 @@ import re
 import struct
 import sys
 import Log
+from Utils import get_resource
 
 TYPE_CTL = 1
 TYPE_TBL = 2
@@ -534,7 +535,7 @@ def write_aiff(entry, filename):
         write_aifc(entry, temp)
         temp.flush()
         temp.close()
-        aifc_decode = os.path.join(os.path.dirname(__file__), "aifc_decode")
+        aifc_decode = get_resource('aifc_decode.exe')
         subprocess.run([aifc_decode, temp.name, filename], check=True)
     finally:
         temp.close()

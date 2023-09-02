@@ -709,10 +709,10 @@ def G_SETOTHERMODE_L_Decode(bin,id):
 		if shift==3:
 			#broken fog in editor
 			if value==0xC8112078:
-				Log.Warn(id+" has fog in it. Visit the model.inc.c file and make sure the setcombine is properly set")
+				#Log.Warn(id+" has fog in it. Visit the model.inc.c file and make sure the setcombine is properly set")
 				return (enum,'G_RM_FOG_SHADE_A', 'G_RM_AA_ZB_OPA_SURF2')
 			if value==0xC8113078:
-				Log.Warn(id+" has fog in it. Visit the model.inc.c file and make sure the setcombine is properly set")
+				#Log.Warn(id+" has fog in it. Visit the model.inc.c file and make sure the setcombine is properly set")
 				return (enum,'G_RM_FOG_SHADE_A', 'G_RM_AA_ZB_TEX_EDGE2')
 			return (enum,0,value)
 		else:
