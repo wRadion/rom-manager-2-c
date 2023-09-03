@@ -2605,7 +2605,7 @@ if __name__=='__main__':
             if not arg[0] in ["levels", "actors", "editor", "rom", "Append", "WaterOnly", "ObjectOnly", "MusicOnly", "MusicExtend", "Text", "Misc", "Textures", "Inherit", "Upscale", "Title", "Sound", "Objects"]:
                 Log.Warn("Invalid argument:", arg[0])
                 continue
-            argD[arg[0]] = eval(arg[1]) if not re.search("^[a-z].*$", arg[1]) else arg[1]
+            argD[arg[0]] = eval(arg[1]) if not re.search("^[a-z].*$", arg[1]) and not arg[0] == "rom" else arg[1]
         Log.Debug("FOUND: " + ", ".join(argD))
     except:
         print(HelpMsg)
