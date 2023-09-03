@@ -1562,7 +1562,7 @@ class Actor():
             del fgeo
         #turn editor off for script object so optimization
         #doesn't happen
-        v[5].editor=0
+        v[5].editor=False
         self.WriteActorModel(rom,dls,v[5],k.split("/")[0]+'_'+k.split("/")[-1]+'_model',ids,fold,v[-1],k)
         Log.Info(k, 'exported')
 
@@ -2376,7 +2376,7 @@ def ExportTitleScreen(rom,level):
     titleptr += UPH(rom,0x0021FDCA)
     #choose level
     s = Script(0)
-    s.editor=0
+    s.editor=False
     s.Seg2(rom)
     entry = 0x108A10
     #get all level data from script
@@ -2528,7 +2528,11 @@ Title = 0, Sound = 0, Objects = 0, MoreLevels = False):
 
     #export title screen via arg
     if Title:
+        Log.Info("Starting Title")
+        Log.Indent()
         ExportTitleScreen(rom,lvldir)
+        Log.Unindent()
+        Log.Info("Title done")
 
     #Process returned scripts to view certain custom data such as custom banks/actors for actor/texture exporting
     [Banks,Models,ObjectD] = ProcessScripts(rom,editor,Scripts)
@@ -2541,11 +2545,19 @@ Title = 0, Sound = 0, Objects = 0, MoreLevels = False):
     ass.mkdir(exist_ok=True)
 
     if actors:
+        Log.Info("Starting Actors")
+        Log.Indent()
         ExportActors(actors,rom,Models,ass)
+        Log.Unindent()
+        Log.Info("Actors done")
 
     #Behaviors
     if Objects:
+        Log.Info("Starting Objects")
+        Log.Indent()
         ExportObjects(Objects,ObjectD,rom,ass,Path(root),editor)
+        Log.Unindent()
+        Log.Info("Objects done")
 
     #export textures
     if Textures:
@@ -2593,7 +2605,7 @@ if __name__=='__main__':
             if not arg[0] in ["levels", "actors", "editor", "rom", "Append", "WaterOnly", "ObjectOnly", "MusicOnly", "MusicExtend", "Text", "Misc", "Textures", "Inherit", "Upscale", "Title", "Sound", "Objects"]:
                 Log.Warn("Invalid argument:", arg[0])
                 continue
-            argD[arg[0]]=eval(arg[1]) if not re.search("[a-z][a-z0-9_]+", arg[1]) else arg[1]
+            argD[arg[0]] = eval(arg[1]) if not re.search("^[a-z].*$", arg[1]) else arg[1]
         Log.Debug("FOUND: " + ", ".join(argD))
     except:
         print(HelpMsg)

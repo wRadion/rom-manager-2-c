@@ -454,7 +454,7 @@ def DecodeDL(rom, s, id, dl, verts, textureptrs, amb, diffuse, ranges, x, start,
 		MSB = cmd[1][:8].uint
 		tile = cmd[1][32:40].uint
 		#separate case for set tile since its special
-		if opt==1:
+		if opt:
 			if MSB==0xF5 and tile==7:
 				if hasattr(LastMat,str(MSB)+'7'):
 					attr = getattr(LastMat,str(MSB)+'7')
